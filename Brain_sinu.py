@@ -7,11 +7,13 @@ import datetime
 import time
 import threading
 import tkinter as tk
-from data import data
 import pygame
-import queue
+import requests
 import pywhatkit as wt
+import sys
 
+from data import data
+import queue
 class VoiceAssistant:
     def __init__(self):
         self.output_queue = queue.Queue()
@@ -23,6 +25,7 @@ class VoiceAssistant:
         self.alarm_entry = None
 
     def speak(self, text):
+        """ Function to speak the given text """
         with self.speak_lock:
             engine = spk.init()
             voices = engine.getProperty('voices')
@@ -31,6 +34,7 @@ class VoiceAssistant:
             engine.runAndWait()
 
     def listen(self):
+        """ Function to listen for voice commands """
         r = sr.Recognizer()
         with sr.Microphone() as source:
             self.update_output("Listening...")
@@ -53,9 +57,11 @@ class VoiceAssistant:
         return ""
 
     def update_output(self, text):
+        """ Function to update the output text in the GUI """
         self.output_queue.put(text)
 
     def process_output_queue(self):
+        """ Function to continuously process output queue and update GUI """
         try:
             while True:
                 text = self.output_queue.get_nowait()
@@ -67,17 +73,26 @@ class VoiceAssistant:
             pass
         self.root.after(100, self.process_output_queue)
 
+    def resource_path(self, relative_path):
+        """ Get absolute path to resource, works for dev and for PyInstaller """
+        try:
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relative_path)
+
     def play_alarm(self, alarm_time):
+        """ Function to play alarm at the specified time """
         current_time = time.strftime('%H:%M')
         while current_time != alarm_time:
             current_time = time.strftime('%H:%M')
             time.sleep(1)
 
         self.speak("Time to wake up!")
-        alarm_sound = "alarm.mp3"
+        alarm_sound = self.resource_path("alarm.mp3")
 
         if os.path.exists(alarm_sound):
-            pygame.init()
             pygame.mixer.init()
             pygame.mixer.music.load(alarm_sound)
             pygame.mixer.music.play()
@@ -88,6 +103,7 @@ class VoiceAssistant:
             self.speak(f"Alarm sound file '{alarm_sound}' not found.")
 
     def screen_shot(self):
+        """ Function to take a screenshot """
         self.speak("What should I name the screenshot?")
         while True:
             name = self.listen()
@@ -104,11 +120,11 @@ class VoiceAssistant:
                 self.update_output("I didn't catch that. Please try again.")
 
     def set_alarm_from_entry(self, event=None):
+        """ Function to set alarm from user input in HH:MM format """
         alarm_time = self.alarm_entry.get().strip()
         try:
             time.strptime(alarm_time, '%H:%M')
-            alarm_thread = threading.Thread(target=self.play_alarm, args=(alarm_time,))
-            alarm_thread.start()
+            threading.Thread(target=self.play_alarm, args=(alarm_time,)).start()
             self.speak(f"Alarm set for {alarm_time}")
             self.update_output(f"Alarm set for {alarm_time}")
             self.remove_alarm_frame()
@@ -117,6 +133,7 @@ class VoiceAssistant:
             self.update_output("Invalid time format. Please enter in HH:MM format.")
 
     def display_alarm_frame(self):
+        """ Function to display alarm setting frame """
         self.speak("Please enter the alarm time in Hour:Minute format.")
         self.alarm_frame = tk.Frame(self.root, bg='gray')
         self.alarm_frame.pack(pady=20)
@@ -131,21 +148,24 @@ class VoiceAssistant:
         alarm_button = tk.Button(self.alarm_frame, text="Set Alarm", command=self.set_alarm_from_entry, bg="blue", fg="white")
         alarm_button.grid(row=0, column=2, padx=10)
 
-        # Focus on the entry field
         self.alarm_entry.focus_set()
 
     def remove_alarm_frame(self):
+        """ Function to remove alarm setting frame """
         if self.alarm_frame:
             self.alarm_frame.destroy()
             self.alarm_frame = None
 
     def get_time(self):
+        """ Function to get current time """
         return datetime.datetime.now().strftime("%I:%M %p")
 
     def get_date(self):
+        """ Function to get current date """
         return datetime.datetime.now().strftime("%d-%m-%Y")
 
     def search_on_google(self):
+        """ Function to search on Google """
         self.speak("What should I search on Google?")
         query = self.listen()
         if query:
@@ -155,16 +175,19 @@ class VoiceAssistant:
             self.speak("I didn't catch that. Please try again.")
 
     def sleep_mode(self):
+        """ Function to put the system to sleep """
         self.speak("Putting the system to sleep in 5 seconds...")
         time.sleep(5)
         os.system("rundll32.exe powrprof.dll,SetSuspendState Sleep")
 
     def shut_down_system(self):
+        """ Function to shut down the system """
         self.speak("Shutting down in 5 seconds...")
         time.sleep(5)
         os.system("shutdown /s /t 1")
 
     def play_song(self):
+        """ Function to play a song """
         self.speak("Which song do you want me to play?")
         song = self.listen()
         if song:
@@ -173,7 +196,23 @@ class VoiceAssistant:
         else:
             self.speak("I didn't catch that. Please try again.")
 
+    def fetch_weather(self, city_name):
+        """ Function to fetch weather information for a city """
+        api_key = "ec4fd8be6f99939122dabbb131fb837f"
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={city_name}&appid={api_key}"
+
+        try:
+            response = requests.get(url)
+            data = response.json()
+            temp = data['main']['temp']
+            temp_c = temp - 273.15
+            self.speak(f"The temperature in {city_name} is {temp_c:.1f} degrees Celsius.")
+        except Exception as e:
+            self.speak(f"Sorry, I couldn't fetch the weather for {city_name}. Please try again.")
+            self.update_output(f"Error fetching weather: {str(e)}")
+
     def assistant(self):
+        """ Main function to handle voice assistant operations """
         self.speak("Hey, user. I am Sinu, say 'Sinu' to activate me")
         while self.assistant_running:
             command = self.listen()
@@ -231,7 +270,7 @@ class VoiceAssistant:
                         os.system("start microsoft.windows.camera:")
                     elif "close camera" in task:
                         self.speak("Closing camera...")
-                        os.system("TASKKILL /F /IM microsoft.windows.camera:")
+                        os.system("TASKKILL /F /IM WindowsCamera.exe")
                     elif "open command prompt" in task:
                         self.speak("Opening command prompt...")
                         os.system("start cmd")
@@ -249,19 +288,37 @@ class VoiceAssistant:
                         self.screen_shot()
                     elif "volume up" in task:
                         self.speak("Increasing volume...")
-                        pyautogui.hotkey('volumeup')
+                        pyautogui.press('volumeup')
                     elif "volume down" in task:
                         self.speak("Decreasing volume...")
-                        pyautogui.hotkey('volumedown')
-                    elif "mute" in task:
-                        self.speak("Muting volume...")
-                        pyautogui.hotkey('volumemute')
-                    elif "unmute" in task:
-                        self.speak("Unmuting volume...")
-                        pyautogui.hotkey('volumemute')
+                        pyautogui.press('volumedown')
+                    elif "mute" in task or "unmute" in task:
+                        self.speak("Toggling mute...")
+                        pyautogui.press('volumemute')
+                    elif "switch window" in task:
+                        self.speak("Switching window...")
+                        pyautogui.hotkey('alt', 'tab')
+                    elif "minimize" in task :
+                        self.speak("Toggling window...")
+                        pyautogui.hotkey('win', 'd')
+                    elif "maximize" in task:
+                        self.speak("Toggling window...")
+                        pyautogui.hotkey('win', 'd')
+                    elif "scroll down" in task:
+                        pyautogui.press('pagedown')
+                    elif "scroll up" in task:
+                        pyautogui.press('pageup')
+                    elif "weather" in task:
+                        self.speak("What city do you want to know the weather of?")
+                        city = self.listen()
+                        if city:
+                            city_name = city.split()[-1]  # Take the last word as the city name
+                            threading.Thread(target=self.fetch_weather, args=(city_name,)).start()
+                        else:
+                            self.speak("I didn't catch the city name. Please try again.")
                     elif "my portfolio" in task:
                         webbrowser.open("https://partha-batabyal.github.io/fatty/#nav_Home")
-                    elif "exit" in task or not self.assistant_running:
+                    elif "sleep" in task or not self.assistant_running:
                         break
                     else:
                         self.speak("I'm not sure how to respond to that. Could you please rephrase or ask something else?")
@@ -269,15 +326,23 @@ class VoiceAssistant:
                 break
 
     def start_assistant(self):
+        """ Function to start the voice assistant """
         self.assistant_running = True
         threading.Thread(target=self.assistant).start()
 
     def stop_assistant(self):
+        """ Function to stop the voice assistant """
         self.assistant_running = False
+        self.remove_alarm_frame()
+        self.speak("Stopping the assistant. Goodbye!")
+        self.update_output("Stopping the assistant. Goodbye!")
+        self.root.destroy()
 
     def setup_gui(self):
+        """ Function to setup the GUI for the voice assistant """
         self.root = tk.Tk()
         self.root.title("Sinu Voice Assistant")
+        self.root.protocol("WM_DELETE_WINDOW", self.stop_assistant)
         self.root.configure(bg='gray')
 
         self.output_text = tk.Text(self.root, height=20, width=60, state=tk.DISABLED, bg='gray', fg='white')
@@ -287,10 +352,10 @@ class VoiceAssistant:
         button_frame.pack(pady=20)
 
         button_style = {'font': ('Helvetica', 14), 'width': 15, 'height': 2, 'fg': 'white'}
-        start_button = tk.Button(button_frame, text="Start", command=self.start_assistant, **button_style, bg="green")
+        start_button = tk.Button(button_frame, text="Start", command=self.start_assistant, **button_style, bg="green", cursor="hand2", activebackground="green")
         start_button.grid(row=0, column=0, padx=20)
 
-        stop_button = tk.Button(button_frame, text="Stop", command=self.stop_assistant, **button_style, bg="red")
+        stop_button = tk.Button(button_frame, text="Stop", command=self.stop_assistant, **button_style, bg="red", cursor="hand2", activebackground="red")
         stop_button.grid(row=0, column=1, padx=20)
 
         self.root.after(100, self.process_output_queue)
